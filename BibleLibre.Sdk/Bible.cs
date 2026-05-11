@@ -103,7 +103,7 @@ namespace BibleLibre.Sdk
 
         /// <summary>
         /// Unified search that supports both fuzzy reference lookup and fuzzy verse-text search.
-        /// If the query looks like a Bible reference (e.g., "Jhon 3:16"), it tries fuzzy reference parsing first.
+        /// If the query looks like a Bible reference (e.g., "Jhon 3:16" or "Jhon.3.16"), it tries fuzzy reference parsing first.
         /// If that fails (or if it does not look like a reference), it falls back to fuzzy text search.
         /// </summary>
         /// <param name="query">Reference-like input or free-text phrase.</param>
@@ -167,8 +167,155 @@ namespace BibleLibre.Sdk
 
         private static bool LooksLikeReference(string query)
         {
-            // Heuristic: reference-like strings contain chapter:verse shape.
-            return Regex.IsMatch(query, @"\d+\s*:\s*\d+");
+            // Heuristic: reference-like strings contain either chapter:verse or OSIS book.chapter.verse shape.
+            return Regex.IsMatch(query, @"\d+\s*:\s*\d+") || Regex.IsMatch(query, @"\.\s*\d+\s*\.\s*\d+");
+        }
+
+        private bool TryParseReference(string reference, bool allowFuzzyBook, double minBookSimilarity, out int bookNumber, out string? bookName, out int chapterNumber, out string versePart)
+        {
+            bookNumber = 0;
+            bookName = null;
+            chapterNumber = 0;
+            versePart = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(reference))
+            {
+                return false;
+            }
+
+            if (!TryParseReferenceParts(reference.Trim(), out string bookPart, out chapterNumber, out versePart))
+            {
+                return false;
+            }
+
+            return TryResolveBookNumber(bookPart, allowFuzzyBook, minBookSimilarity, out bookNumber, out bookName);
+        }
+
+        private static bool TryParseReferenceParts(string trimmedReference, out string bookPart, out int chapterNumber, out string versePart)
+        {
+            bookPart = string.Empty;
+            chapterNumber = 0;
+            versePart = string.Empty;
+
+            if (TryParseOsisReferenceParts(trimmedReference, out bookPart, out chapterNumber, out versePart))
+            {
+                return true;
+            }
+
+            int lastSpaceIndex = trimmedReference.LastIndexOf(' ');
+            if (lastSpaceIndex < 0)
+            {
+                return false;
+            }
+
+            bookPart = trimmedReference.Substring(0, lastSpaceIndex).Trim();
+            string chapterVersePart = trimmedReference.Substring(lastSpaceIndex + 1).Trim();
+
+            string[] chapterVerseSplit = chapterVersePart.Split(':');
+            if (chapterVerseSplit.Length != 2)
+            {
+                return false;
+            }
+
+            if (!int.TryParse(chapterVerseSplit[0].Trim(), out chapterNumber))
+            {
+                return false;
+            }
+
+            versePart = chapterVerseSplit[1].Trim();
+            return !string.IsNullOrWhiteSpace(bookPart) && !string.IsNullOrWhiteSpace(versePart);
+        }
+
+        private static bool TryParseOsisReferenceParts(string trimmedReference, out string bookPart, out int chapterNumber, out string versePart)
+        {
+            bookPart = string.Empty;
+            chapterNumber = 0;
+            versePart = string.Empty;
+
+            Match match = Regex.Match(trimmedReference, @"^(?<book>.+?)\s*\.\s*(?<chapter>\d+)\s*\.\s*(?<verses>.+)$");
+            if (!match.Success)
+            {
+                return false;
+            }
+
+            bookPart = match.Groups["book"].Value.Trim();
+            versePart = match.Groups["verses"].Value.Trim();
+            return int.TryParse(match.Groups["chapter"].Value, out chapterNumber)
+                   && !string.IsNullOrWhiteSpace(bookPart)
+                   && !string.IsNullOrWhiteSpace(versePart);
+        }
+
+        private bool TryResolveBookNumber(string bookPart, bool allowFuzzyBook, double minBookSimilarity, out int bookNumber, out string? bookName)
+        {
+            bookNumber = 0;
+            bookName = null;
+
+            int? resolvedBookNumber = Localization.GetBookNumber(bookPart);
+
+            if (!resolvedBookNumber.HasValue)
+            {
+                string periodStrippedBookPart = bookPart.Replace(".", string.Empty);
+                if (!string.Equals(periodStrippedBookPart, bookPart, System.StringComparison.Ordinal))
+                {
+                    resolvedBookNumber = Localization.GetBookNumber(periodStrippedBookPart);
+                }
+            }
+
+            if (!resolvedBookNumber.HasValue && allowFuzzyBook)
+            {
+                resolvedBookNumber = ResolveBookNumberFuzzy(bookPart, minBookSimilarity);
+            }
+
+            if (!resolvedBookNumber.HasValue)
+            {
+                return false;
+            }
+
+            bookNumber = resolvedBookNumber.Value;
+            bookName = Localization.GetBookName(bookNumber);
+            return true;
+        }
+
+        private void AddVersesFromReference(List<Verse> results, int bookNumber, string? bookName, int chapterNumber, string versePart)
+        {
+            string[] verseSpecs = versePart.Split(',');
+
+            foreach (string verseSpec in verseSpecs)
+            {
+                string trimmedSpec = verseSpec.Trim();
+
+                if (trimmedSpec.Contains('-'))
+                {
+                    string[] rangeParts = trimmedSpec.Split('-');
+                    if (rangeParts.Length == 2 &&
+                        int.TryParse(rangeParts[0].Trim(), out int startVerse) &&
+                        int.TryParse(rangeParts[1].Trim(), out int endVerse))
+                    {
+                        for (int v = startVerse; v <= endVerse; v++)
+                        {
+                            Verse? verse = GetVerse(bookNumber, chapterNumber, v);
+                            if (verse != null)
+                            {
+                                verse.BookNumber = bookNumber;
+                                verse.BookName = bookName;
+                                verse.ChapterNumber = chapterNumber;
+                                results.Add(verse);
+                            }
+                        }
+                    }
+                }
+                else if (int.TryParse(trimmedSpec, out int verseNumber))
+                {
+                    Verse? verse = GetVerse(bookNumber, chapterNumber, verseNumber);
+                    if (verse != null)
+                    {
+                        verse.BookNumber = bookNumber;
+                        verse.BookName = bookName;
+                        verse.ChapterNumber = chapterNumber;
+                        results.Add(verse);
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -343,100 +490,17 @@ namespace BibleLibre.Sdk
 
         /// <summary>
         /// Gets one or more verses using a quick search string format.
-        /// Supports formats like "JN 3:16", "JOHN 3:1-2", "JN 3:1,4,5-6".
+        /// Supports formats like "JN 3:16", "JOHN 3:1-2", "JN 3:1,4,5-6", and OSIS-style forms like "Jn.3.16".
         /// </summary>
         /// <param name="reference">The verse reference string (case-insensitive).</param>
         /// <returns>A list of verses matching the reference, or an empty list if not found.</returns>
         public List<Verse> Get(string reference)
         {
             List<Verse> results = new List<Verse>();
-            
-            if (string.IsNullOrWhiteSpace(reference))
+
+            if (TryParseReference(reference, allowFuzzyBook: false, minBookSimilarity: 0.0, out int bookNumber, out string? bookName, out int chapterNumber, out string versePart))
             {
-                return results;
-            }
-
-            // Parse the reference string
-            // Expected format: "BookName Chapter:Verse" or "BookName Chapter:Verse-Verse" or "BookName Chapter:Verse,Verse,Verse-Verse"
-            string trimmedRef = reference.Trim();
-            
-            // Split by space to separate book name from chapter:verse
-            int lastSpaceIndex = trimmedRef.LastIndexOf(' ');
-            if (lastSpaceIndex < 0)
-            {
-                return results; // Invalid format
-            }
-
-            string bookPart = trimmedRef.Substring(0, lastSpaceIndex).Trim();
-            string chapterVersePart = trimmedRef.Substring(lastSpaceIndex + 1).Trim();
-
-            // Get book number
-            int? bookNumber = Localization.GetBookNumber(bookPart);
-            if (!bookNumber.HasValue)
-            {
-                return results; // Book not found
-            }
-
-            // Get book name for populating the verse
-            string? bookName = Localization.GetBookName(bookNumber.Value);
-
-            // Split chapter and verses
-            string[] chapterVerseSplit = chapterVersePart.Split(':');
-            if (chapterVerseSplit.Length != 2)
-            {
-                return results; // Invalid format
-            }
-
-            if (!int.TryParse(chapterVerseSplit[0], out int chapterNumber))
-            {
-                return results; // Invalid chapter number
-            }
-
-            string versePart = chapterVerseSplit[1];
-            
-            // Parse verse specifications (can be single, range, or comma-separated)
-            string[] verseSpecs = versePart.Split(',');
-            
-            foreach (string verseSpec in verseSpecs)
-            {
-                string trimmedSpec = verseSpec.Trim();
-                
-                if (trimmedSpec.Contains('-'))
-                {
-                    // Range: "1-5"
-                    string[] rangeParts = trimmedSpec.Split('-');
-                    if (rangeParts.Length == 2 &&
-                        int.TryParse(rangeParts[0].Trim(), out int startVerse) &&
-                        int.TryParse(rangeParts[1].Trim(), out int endVerse))
-                    {
-                        for (int v = startVerse; v <= endVerse; v++)
-                        {
-                            Verse? verse = GetVerse(bookNumber.Value, chapterNumber, v);
-                            if (verse != null)
-                            {
-                                verse.BookNumber = bookNumber.Value;
-                                verse.BookName = bookName;
-                                verse.ChapterNumber = chapterNumber;
-                                results.Add(verse);
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    // Single verse
-                    if (int.TryParse(trimmedSpec, out int verseNumber))
-                    {
-                        Verse? verse = GetVerse(bookNumber.Value, chapterNumber, verseNumber);
-                        if (verse != null)
-                        {
-                            verse.BookNumber = bookNumber.Value;
-                            verse.BookName = bookName;
-                            verse.ChapterNumber = chapterNumber;
-                            results.Add(verse);
-                        }
-                    }
-                }
+                AddVersesFromReference(results, bookNumber, bookName, chapterNumber, versePart);
             }
 
             return results;
@@ -445,7 +509,7 @@ namespace BibleLibre.Sdk
         /// <summary>
         /// Gets one or more verses using a quick search string format, with fuzzy book-name fallback.
         /// Chapter and verse parsing remains strict; only the book part is fuzzy-matched when exact lookup fails.
-        /// Supports formats like "Jhon 3:16", "Genessis 1:1-3", "Romans 8:28".
+        /// Supports formats like "Jhon 3:16", "Genessis 1:1-3", "Romans 8:28", and OSIS-style forms like "Jhn.3.16".
         /// </summary>
         /// <param name="reference">The verse reference string.</param>
         /// <param name="minBookSimilarity">Minimum similarity for fuzzy book resolution (0.0-1.0).</param>
@@ -454,86 +518,9 @@ namespace BibleLibre.Sdk
         {
             List<Verse> results = new List<Verse>();
 
-            if (string.IsNullOrWhiteSpace(reference))
+            if (TryParseReference(reference, allowFuzzyBook: true, minBookSimilarity, out int bookNumber, out string? bookName, out int chapterNumber, out string versePart))
             {
-                return results;
-            }
-
-            string trimmedRef = reference.Trim();
-            int lastSpaceIndex = trimmedRef.LastIndexOf(' ');
-            if (lastSpaceIndex < 0)
-            {
-                return results;
-            }
-
-            string bookPart = trimmedRef.Substring(0, lastSpaceIndex).Trim();
-            string chapterVersePart = trimmedRef.Substring(lastSpaceIndex + 1).Trim();
-
-            int? bookNumber = Localization.GetBookNumber(bookPart);
-            if (!bookNumber.HasValue)
-            {
-                bookNumber = ResolveBookNumberFuzzy(bookPart, minBookSimilarity);
-            }
-
-            if (!bookNumber.HasValue)
-            {
-                return results;
-            }
-
-            string? bookName = Localization.GetBookName(bookNumber.Value);
-
-            string[] chapterVerseSplit = chapterVersePart.Split(':');
-            if (chapterVerseSplit.Length != 2)
-            {
-                return results;
-            }
-
-            if (!int.TryParse(chapterVerseSplit[0], out int chapterNumber))
-            {
-                return results;
-            }
-
-            string versePart = chapterVerseSplit[1];
-            string[] verseSpecs = versePart.Split(',');
-
-            foreach (string verseSpec in verseSpecs)
-            {
-                string trimmedSpec = verseSpec.Trim();
-
-                if (trimmedSpec.Contains('-'))
-                {
-                    string[] rangeParts = trimmedSpec.Split('-');
-                    if (rangeParts.Length == 2 &&
-                        int.TryParse(rangeParts[0].Trim(), out int startVerse) &&
-                        int.TryParse(rangeParts[1].Trim(), out int endVerse))
-                    {
-                        for (int v = startVerse; v <= endVerse; v++)
-                        {
-                            Verse? verse = GetVerse(bookNumber.Value, chapterNumber, v);
-                            if (verse != null)
-                            {
-                                verse.BookNumber = bookNumber.Value;
-                                verse.BookName = bookName;
-                                verse.ChapterNumber = chapterNumber;
-                                results.Add(verse);
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    if (int.TryParse(trimmedSpec, out int verseNumber))
-                    {
-                        Verse? verse = GetVerse(bookNumber.Value, chapterNumber, verseNumber);
-                        if (verse != null)
-                        {
-                            verse.BookNumber = bookNumber.Value;
-                            verse.BookName = bookName;
-                            verse.ChapterNumber = chapterNumber;
-                            results.Add(verse);
-                        }
-                    }
-                }
+                AddVersesFromReference(results, bookNumber, bookName, chapterNumber, versePart);
             }
 
             return results;

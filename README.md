@@ -12,8 +12,8 @@ A C# library for parsing and loading Bible data from multiple XML formats.
 - **Multiple Abbreviations**: Each book supports multiple abbreviations (e.g., "John", "Joh", "Jhn", "Jn")
 - **Period-Flexible Matching**: Abbreviations work with or without periods (e.g., "Gen" and "Gen." both work)
 - **Testament Enum**: Testament type is now an enum (Old/New)
-- **Quick Search**: Search for verses using natural reference formats like "JN 3:16" or "JOHN 3:1-5"
-- **Fuzzy Reference Search**: Tolerates misspelled book names (e.g., "Jhon 3:16") via `GetFuzzyReference(...)`
+- **Quick Search**: Search for verses using natural reference formats like "JN 3:16", "JOHN 3:1-5", or OSIS-style references like "John.3.16"
+- **Fuzzy Reference Search**: Tolerates misspelled book names (e.g., "Jhon 3:16" or "Jhon.3.16") via `GetFuzzyReference(...)`
 - **Fuzzy Text Search**: Search verse content by similarity using `FuzzySearchByText(...)`
 - **Unified Search API**: One `Search(...)` method that supports both fuzzy reference and fuzzy text input
 - **Editable Localization**: Load custom book names and abbreviations from a text file
@@ -71,15 +71,18 @@ var verse4 = bible.GetVerse("GEN", 1, 1); // Also works
 var verses = bible.Get("JN 3:16"); // Single verse
 var verses2 = bible.Get("JOHN 3:1-2"); // Verse range
 var verses3 = bible.Get("JN 3:1,4,5-6"); // Multiple verses and ranges
+var verses4 = bible.Get("John.3.16"); // OSIS-style reference
 
 // Fuzzy reference search (book typo tolerant)
 var fuzzyRef = bible.GetFuzzyReference("Jhon 3:16");
+var fuzzyRef2 = bible.GetFuzzyReference("Jhon.3.16");
 
 // Fuzzy verse content search
 var fuzzyText = bible.FuzzySearchByText("for god so loved the world", minSimilarity: 0.35, maxResults: 5);
 
 // Unified search: auto-routes to fuzzy reference or fuzzy text search
 var search1 = bible.Search("Jhon 3:16");
+var search1b = bible.Search("Jhon.3.16");
 var search2 = bible.Search("in the beginning was the word", maxResults: 3);
 
 // Verses returned include book and chapter metadata
@@ -162,19 +165,21 @@ A complete reference file generated from `BibleLibre.Sdk/Localization.cs` is inc
 
 The library includes three complementary search APIs:
 
-- `GetFuzzyReference(...)`: Fuzzy book-name matching (strict chapter/verse parsing)
+- `GetFuzzyReference(...)`: Fuzzy book-name matching (strict chapter/verse parsing; supports standard and OSIS-style references)
 - `FuzzySearchByText(...)`: Similarity search over verse text content
-- `Search(...)`: Unified method that first tries fuzzy reference parsing for reference-like input (`3:16` pattern), then falls back to fuzzy text search
+- `Search(...)`: Unified method that first tries fuzzy reference parsing for reference-like input (`Book 3:16` or `Book.3.16` patterns), then falls back to fuzzy text search
 
 ```csharp
 // Fuzzy reference (book typo tolerance)
 var byReference = bible.GetFuzzyReference("Jhon 3:16");
+var byReferenceOsis = bible.GetFuzzyReference("Jhon.3.16");
 
 // Fuzzy content search
 var byText = bible.FuzzySearchByText("for god so loved the world", minSimilarity: 0.35, maxResults: 5);
 
 // Unified search
 var smart1 = bible.Search("Jhon 3:16");
+var smart1b = bible.Search("Jhon.3.16");
 var smart2 = bible.Search("for god so loved the world", maxResults: 3);
 ```
 

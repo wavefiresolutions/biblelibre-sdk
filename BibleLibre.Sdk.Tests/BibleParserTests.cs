@@ -42,6 +42,51 @@ public class ParserFormatTests(ITestOutputHelper output)
     }
 
     [Theory]
+    [InlineData("John 3:16")]
+    [InlineData("Jhn. 3:16")]
+    [InlineData("John.3.16")]
+    public void Get_SupportsStandardAndOsisReferences(string reference)
+    {
+        Bible bible = BibleParser.Load(GetFormatPath("eng-kjv.osis.xml"));
+
+        List<Verse> verses = bible.Get(reference);
+
+        Assert.Single(verses);
+        Verse verse = verses[0];
+        Assert.Equal(43, verse.BookNumber);
+        Assert.Equal(3, verse.ChapterNumber);
+        Assert.Equal(16, verse.Number);
+    }
+
+    [Fact]
+    public void GetFuzzyReference_SupportsOsisStyleWithMisspelledBook()
+    {
+        Bible bible = BibleParser.Load(GetFormatPath("eng-kjv.osis.xml"));
+
+        List<Verse> verses = bible.GetFuzzyReference("Jhon.3.16");
+
+        Assert.Single(verses);
+        Verse verse = verses[0];
+        Assert.Equal(43, verse.BookNumber);
+        Assert.Equal(3, verse.ChapterNumber);
+        Assert.Equal(16, verse.Number);
+    }
+
+    [Fact]
+    public void Search_SupportsOsisStyleReferenceInUnifiedSearch()
+    {
+        Bible bible = BibleParser.Load(GetFormatPath("eng-kjv.osis.xml"));
+
+        List<Verse> verses = bible.Search("Jhn.3.16");
+
+        Assert.Single(verses);
+        Verse verse = verses[0];
+        Assert.Equal(43, verse.BookNumber);
+        Assert.Equal(3, verse.ChapterNumber);
+        Assert.Equal(16, verse.Number);
+    }
+
+    [Theory]
     [InlineData("eng-kjv.osis.xml")]
     [InlineData("eng-web.usfx.xml")]
     [InlineData("eng-ylt.zefania.xml")]
