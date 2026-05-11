@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="BibleLibre.Sdk.Tests/BibleLibre.Sdk.Tests.csproj" />
+  <Project Path="BibleLibre.Sdk/BibleLibre.Sdk.csproj" />
+</Solution>
