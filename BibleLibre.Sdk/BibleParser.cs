@@ -4,6 +4,9 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Xml.Linq;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Xml;
 
 namespace BibleLibre.Sdk
 {
@@ -110,6 +113,66 @@ namespace BibleLibre.Sdk
             {
                 throw new ArgumentException("Failed to parse stream as XML or binary. See inner exception.", ex);
             }
+        }
+
+        /// <summary>
+        /// Asynchronously loads a Bible from a Stream using an async XML reader.
+        /// The provided stream is not disposed by this method.
+        /// </summary>
+        public static Task<Bible> LoadAsync(Stream stream, string? localizationPath = null)
+        {
+            return LoadAsync(stream, localizationPath, CancellationToken.None);
+        }
+
+        /// <summary>
+        /// Asynchronously loads a Bible from a file path using asynchronous I/O and an async XML reader.
+        /// </summary>
+        public static async Task<Bible> LoadAsync(string filePath, string? localizationPath = null)
+        {
+            if (!File.Exists(filePath))
+            {
+                throw new FileNotFoundException("Bible file not found.", filePath);
+            }
+
+            // Open the file for asynchronous reading
+            using FileStream fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
+            return await LoadAsync(fs, localizationPath, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Asynchronously loads a Bible from an XML string.
+        /// </summary>
+        public static Task<Bible> LoadXmlAsync(string xmlContent, string? localizationPath = null)
+        {
+            return LoadXmlAsync(xmlContent, localizationPath, CancellationToken.None);
+        }
+
+        /// <summary>
+        /// Asynchronously loads a Bible from a Stream using an async XML reader with cancellation support.
+        /// </summary>
+        public static async Task<Bible> LoadAsync(Stream stream, string? localizationPath, CancellationToken cancellationToken)
+        {
+            XmlReaderSettings settings = new XmlReaderSettings
+            {
+                Async = true,
+                DtdProcessing = DtdProcessing.Parse
+            };
+
+            using XmlReader reader = XmlReader.Create(stream, settings);
+            XDocument doc = await XDocument.LoadAsync(reader, LoadOptions.None, cancellationToken).ConfigureAwait(false);
+            return Parse(doc, localizationPath);
+        }
+
+        /// <summary>
+        /// Asynchronously loads a Bible from an XML string with cancellation support.
+        /// </summary>
+        public static async Task<Bible> LoadXmlAsync(string xmlContent, string? localizationPath, CancellationToken cancellationToken)
+        {
+            using StringReader sr = new StringReader(xmlContent);
+            XmlReaderSettings settings = new XmlReaderSettings { Async = true };
+            using XmlReader reader = XmlReader.Create(sr, settings);
+            XDocument doc = await XDocument.LoadAsync(reader, LoadOptions.None, cancellationToken).ConfigureAwait(false);
+            return Parse(doc, localizationPath);
         }
 
 

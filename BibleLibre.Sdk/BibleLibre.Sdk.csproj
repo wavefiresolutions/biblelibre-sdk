@@ -9,7 +9,7 @@
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <PackageId>BibleLibre.Sdk</PackageId>
         <Title>BibleLibre.Sdk</Title>
-        <Version>1.0.0</Version>
+        <Version>1.1.0</Version>
         <Authors>russkyc</Authors>
         <Description>A C# library for parsing and loading Bible data from multiple XML formats (OSIS, USFX, Zefania, Generic XML) with custom localization support and advanced search capabilities.</Description>
         <Copyright>Copyright (c) 2026</Copyright>

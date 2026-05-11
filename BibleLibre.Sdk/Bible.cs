@@ -1,6 +1,8 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using System.Threading;
 using F23.StringSimilarity;
 
 namespace BibleLibre.Sdk
@@ -102,6 +104,18 @@ namespace BibleLibre.Sdk
         }
 
         /// <summary>
+        /// Asynchronous wrapper for <see cref="FuzzySearchByText"/>. Offloads the search to the thread-pool.
+        /// </summary>
+        public Task<List<Verse>> FuzzySearchByTextAsync(string query, double minSimilarity = 0.65, int maxResults = 50, CancellationToken cancellationToken = default)
+        {
+            return Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return FuzzySearchByText(query, minSimilarity, maxResults);
+            }, cancellationToken);
+        }
+
+        /// <summary>
         /// Unified search that supports both fuzzy reference lookup and fuzzy verse-text search.
         /// If the query looks like a Bible reference (e.g., "Jhon 3:16" or "Jhon.3.16"), it tries fuzzy reference parsing first.
         /// If that fails (or if it does not look like a reference), it falls back to fuzzy text search.
@@ -132,6 +146,23 @@ namespace BibleLibre.Sdk
             }
 
             return FuzzySearchByText(query, minTextSimilarity, maxResults);
+        }
+
+        /// <summary>
+        /// Asynchronous wrapper for <see cref="Search"/>.
+        /// </summary>
+        public Task<List<Verse>> SearchAsync(
+            string query,
+            double minBookSimilarity = 0.82,
+            double minTextSimilarity = 0.35,
+            int maxResults = 50,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return Search(query, minBookSimilarity, minTextSimilarity, maxResults);
+            }, cancellationToken);
         }
 
         // Normalize text: lowercase, remove punctuation except letters/numbers/space, collapse whitespace
@@ -507,6 +538,18 @@ namespace BibleLibre.Sdk
         }
 
         /// <summary>
+        /// Asynchronous wrapper for <see cref="Get"/>.
+        /// </summary>
+        public Task<List<Verse>> GetAsync(string reference, CancellationToken cancellationToken = default)
+        {
+            return Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return Get(reference);
+            }, cancellationToken);
+        }
+
+        /// <summary>
         /// Gets one or more verses using a quick search string format, with fuzzy book-name fallback.
         /// Chapter and verse parsing remains strict; only the book part is fuzzy-matched when exact lookup fails.
         /// Supports formats like "Jhon 3:16", "Genessis 1:1-3", "Romans 8:28", and OSIS-style forms like "Jhn.3.16".
@@ -524,6 +567,18 @@ namespace BibleLibre.Sdk
             }
 
             return results;
+        }
+
+        /// <summary>
+        /// Asynchronous wrapper for <see cref="GetFuzzyReference"/>.
+        /// </summary>
+        public Task<List<Verse>> GetFuzzyReferenceAsync(string reference, double minBookSimilarity = 0.82, CancellationToken cancellationToken = default)
+        {
+            return Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return GetFuzzyReference(reference, minBookSimilarity);
+            }, cancellationToken);
         }
 
         private int? ResolveBookNumberFuzzy(string bookPart, double minBookSimilarity)

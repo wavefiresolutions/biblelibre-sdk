@@ -41,6 +41,50 @@ public class ParserFormatTests(ITestOutputHelper output)
         Assert.Contains(expectedContains, verse.Text ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task LoadAsync_FromFile_ParsesCoreStructureAndVerseText()
+    {
+        string filePath = GetFormatPath("eng-kjv.osis.xml");
+
+        Bible bible = await BibleParser.LoadAsync(filePath);
+
+        Assert.NotNull(bible);
+        Assert.NotEmpty(bible.Testaments);
+
+        Verse? verse = bible.GetVerse(1, 1, 1);
+        Assert.NotNull(verse);
+        _output.WriteLine($"{verse.BookName} {verse.ChapterNumber}:{verse.Number} {verse.Text}");
+        Assert.Contains("In the beginning", verse.Text ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task LoadAsync_FromStream_ParsesCoreStructureAndVerseText()
+    {
+        string filePath = GetFormatPath("eng-kjv.osis.xml");
+        await using FileStream fs = File.OpenRead(filePath);
+
+        Bible bible = await BibleParser.LoadAsync(fs);
+
+        Assert.NotNull(bible);
+        Verse? verse = bible.GetVerse(1, 1, 1);
+        Assert.NotNull(verse);
+        Assert.Contains("In the beginning", verse.Text ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task LoadXmlAsync_FromString_ParsesCoreStructureAndVerseText()
+    {
+        string filePath = GetFormatPath("eng-kjv.osis.xml");
+        string xml = File.ReadAllText(filePath);
+
+        Bible bible = await BibleParser.LoadXmlAsync(xml);
+
+        Assert.NotNull(bible);
+        Verse? verse = bible.GetVerse(1, 1, 1);
+        Assert.NotNull(verse);
+        Assert.Contains("In the beginning", verse.Text ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData("John 3:16")]
     [InlineData("Jhn. 3:16")]
