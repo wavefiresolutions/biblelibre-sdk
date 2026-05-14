@@ -131,6 +131,61 @@ public class ParserFormatTests(ITestOutputHelper output)
     }
 
     [Theory]
+    [InlineData("John 1", 1)]
+    [InlineData("1Cor 2", 2)]
+    public void Get_ChapterOnly_ReturnsFullChapter(string reference, int chapterNumber)
+    {
+        Bible bible = BibleParser.Load(GetFormatPath("eng-kjv.osis.xml"));
+
+        List<Verse> verses = bible.Search(reference);
+
+        _output.WriteLine($"Reference: {reference}, Verses found: {verses.Count}");
+        Assert.NotEmpty(verses);
+        Assert.All(verses, v => Assert.Equal(chapterNumber, v.ChapterNumber));
+    }
+
+    [Fact]
+    public void GetFuzzyReference_HandlesNumericPrefixAndMisspelling()
+    {
+        Bible bible = BibleParser.Load(GetFormatPath("eng-kjv.osis.xml"));
+
+        // "1Chor" is a misspelled/alternate form for "1 Chronicles"; fuzzy lookup should resolve to book 13
+        List<Verse> verses = bible.GetFuzzyReference("1Chor 1:1");
+
+        Assert.NotEmpty(verses);
+        Verse verse = verses[0];
+        Assert.Equal(13, verse.BookNumber); // 1 Chronicles
+        Assert.Equal(1, verse.ChapterNumber);
+        Assert.Equal(1, verse.Number);
+    }
+
+    [Fact]
+    public void Get_Exact2Kings_WithSpace()
+    {
+        Bible bible = BibleParser.Load(GetFormatPath("eng-kjv.osis.xml"));
+
+        List<Verse> verses = bible.Get("2 Kings 1:1");
+
+        Assert.Single(verses);
+        Verse verse = verses[0];
+        Assert.Equal(12, verse.BookNumber); // 2 Kings
+        Assert.Equal(1, verse.ChapterNumber);
+        Assert.Equal(1, verse.Number);
+    }
+
+    [Fact]
+    public void GetFuzzyReference_NoSpaceNumericPrefix()
+    {
+        Bible bible = BibleParser.Load(GetFormatPath("eng-kjv.osis.xml"));
+
+        // "2Kings" without space should still be resolved by fuzzy matching
+        List<Verse> verses = bible.GetFuzzyReference("2Kings 1:1");
+
+        Assert.NotEmpty(verses);
+        Assert.Equal(12, verses[0].BookNumber);
+    }
+
+    [Theory]
     [InlineData("eng-kjv.osis.xml")]
     [InlineData("eng-web.usfx.xml")]
     [InlineData("eng-ylt.zefania.xml")]

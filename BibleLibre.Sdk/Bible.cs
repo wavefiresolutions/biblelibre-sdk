@@ -198,8 +198,16 @@ namespace BibleLibre.Sdk
 
         private static bool LooksLikeReference(string query)
         {
-            // Heuristic: reference-like strings contain either chapter:verse or OSIS book.chapter.verse shape.
-            return Regex.IsMatch(query, @"\d+\s*:\s*\d+") || Regex.IsMatch(query, @"\.\s*\d+\s*\.\s*\d+");
+            // Heuristic: reference-like strings contain either chapter:verse, OSIS book.chapter.verse,
+            // or a simple "Book Chapter" form (e.g. "John 1").
+            if (string.IsNullOrWhiteSpace(query)) return false;
+
+            if (Regex.IsMatch(query, @"\d+\s*:\s*\d+")) return true; // e.g. 3:16
+            if (Regex.IsMatch(query, @"\.\s*\d+\s*\.\s*\d+")) return true; // e.g. Jn.3.16
+
+            // simple book+chapter like "John 1" -> last token is an integer chapter
+            // Ensure there is at least one letter before the final number to avoid matching plain numbers.
+            return Regex.IsMatch(query.Trim(), @".+\s+\d+$");
         }
 
         private bool TryParseReference(string reference, bool allowFuzzyBook, double minBookSimilarity, out int bookNumber, out string? bookName, out int chapterNumber, out string versePart)
@@ -242,19 +250,27 @@ namespace BibleLibre.Sdk
             bookPart = trimmedReference.Substring(0, lastSpaceIndex).Trim();
             string chapterVersePart = trimmedReference.Substring(lastSpaceIndex + 1).Trim();
 
+            // If the chapter/verse part uses colon (chapter:verse)
             string[] chapterVerseSplit = chapterVersePart.Split(':');
-            if (chapterVerseSplit.Length != 2)
+            if (chapterVerseSplit.Length == 2)
             {
-                return false;
+                if (!int.TryParse(chapterVerseSplit[0].Trim(), out chapterNumber))
+                {
+                    return false;
+                }
+
+                versePart = chapterVerseSplit[1].Trim();
+                return !string.IsNullOrWhiteSpace(bookPart) && !string.IsNullOrWhiteSpace(versePart);
             }
 
-            if (!int.TryParse(chapterVerseSplit[0].Trim(), out chapterNumber))
+            // If the user provided only a chapter number (e.g. "John 1"), accept that and set versePart empty
+            if (int.TryParse(chapterVersePart, out chapterNumber))
             {
-                return false;
+                versePart = string.Empty; // indicates whole chapter
+                return !string.IsNullOrWhiteSpace(bookPart);
             }
 
-            versePart = chapterVerseSplit[1].Trim();
-            return !string.IsNullOrWhiteSpace(bookPart) && !string.IsNullOrWhiteSpace(versePart);
+            return false;
         }
 
         private static bool TryParseOsisReferenceParts(string trimmedReference, out string bookPart, out int chapterNumber, out string versePart)
@@ -263,17 +279,17 @@ namespace BibleLibre.Sdk
             chapterNumber = 0;
             versePart = string.Empty;
 
-            Match match = Regex.Match(trimmedReference, @"^(?<book>.+?)\s*\.\s*(?<chapter>\d+)\s*\.\s*(?<verses>.+)$");
+            // OSIS-like: Book.Chapter.Verse or Book.Chapter (chapter-only)
+            Match match = Regex.Match(trimmedReference, @"^(?<book>.+?)\s*\.\s*(?<chapter>\d+)(?:\s*\.\s*(?<verses>.+))?$");
             if (!match.Success)
             {
                 return false;
             }
 
             bookPart = match.Groups["book"].Value.Trim();
-            versePart = match.Groups["verses"].Value.Trim();
+            versePart = match.Groups["verses"].Success ? match.Groups["verses"].Value.Trim() : string.Empty;
             return int.TryParse(match.Groups["chapter"].Value, out chapterNumber)
-                   && !string.IsNullOrWhiteSpace(bookPart)
-                   && !string.IsNullOrWhiteSpace(versePart);
+                   && !string.IsNullOrWhiteSpace(bookPart);
         }
 
         private bool TryResolveBookNumber(string bookPart, bool allowFuzzyBook, double minBookSimilarity, out int bookNumber, out string? bookName)
@@ -309,6 +325,24 @@ namespace BibleLibre.Sdk
 
         private void AddVersesFromReference(List<Verse> results, int bookNumber, string? bookName, int chapterNumber, string versePart)
         {
+            // If versePart is empty or just a wildcard, return the entire chapter
+            if (string.IsNullOrWhiteSpace(versePart) || versePart.Trim() == "*")
+            {
+                Chapter? chapter = GetChapter(bookNumber, chapterNumber);
+                if (chapter != null)
+                {
+                    foreach (var verse in chapter.Verses)
+                    {
+                        verse.BookNumber = bookNumber;
+                        verse.BookName = bookName;
+                        verse.ChapterNumber = chapterNumber;
+                        results.Add(verse);
+                    }
+                }
+
+                return;
+            }
+
             string[] verseSpecs = versePart.Split(',');
 
             foreach (string verseSpec in verseSpecs)
